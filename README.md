@@ -73,15 +73,15 @@ k1,k2,k3,key = jxr.split(key,4)
 
 # Initial parameters for InitialCondition
 initial_params = params.ParamsNormal(
-    mu = jnp.zeros(N),
-    scale_tril = dt*jnp.eye(N)
+    mu = jnp.zeros(D),
+    scale_tril = dt*jnp.eye(D)
 )
 
 # Initial parameters for the linear dynamical system
 lds_params = params.ParamsLinearDynamics(
-    scale_tril = dt*jnp.eye(N),
-    A = jxr.normal(k1, shape=(N,N)),
-    B = jnp.eye(N),
+    scale_tril = dt*jnp.eye(D),
+    A = jxr.normal(k1, shape=(D,D)),
+    B = jxr.normal(k2, shape=(D,M)),
     initial = initial_params
 )
 
@@ -91,14 +91,14 @@ likelihood_params = params.ParamsConditionalNormal(
 )
 
 # Create instances of model blocks (Dynamics, Emission, Likelihood, Joint, Recognition)
-initial = models.InitialCondition(N, initial_params)
+initial = models.InitialCondition(D, initial_params)
 
 # The control matrix B can be made trainable by setting `train_B` to `True` 
-lds = models.LinearDynamics(D=N,M=N,initial=initial,params=lds_params,dt=dt)
-emission = models.NeuralNetEmission(N,N,key=k2,H=100)
+lds = models.LinearDynamics(D=D,M=M,initial=initial,params=lds_params,dt=dt)
+emission = models.NeuralNetEmission(D,N,key=k2,H=100)
 likelihood = models.NormalConditionalLikelihood(N,params=likelihood_params)
 joint = models.fLDS(lds,emission,likelihood)
-recognition = inference.AmortizedLSTM(D=N,N=N,M=N,key=k3,T=y.shape[1])
+recognition = inference.AmortizedLSTM(D=D,N=N,M=M,key=k3,T=T)
 
 # Fit the joint model and recognition model parameters
 k1, key = jxr.split(key,2)
