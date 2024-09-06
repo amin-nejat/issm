@@ -101,7 +101,6 @@ joint = models.fLDS(lds,emission,likelihood)
 recognition = inference.AmortizedLSTM(D=N,N=N,M=N,key=k3,T=y.shape[1])
 
 # Fit the joint model and recognition model parameters
-
 k1, key = jxr.split(key,2)
 
 loss = inference.infer(
@@ -111,7 +110,6 @@ loss = inference.infer(
 )
 
 # Infer the latents and denoise the data using trained models
-
 k1, k2, key = jxr.split(key,3)
 
 x_smooth = vmap(
