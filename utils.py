@@ -12,6 +12,7 @@ import jax
 import jax.random as jxr
 
 from scipy import interpolate
+from scipy.stats import ortho_group
 
 from jaxtyping import Array, Float, Int
 from typing import List
@@ -130,6 +131,7 @@ def reg(x_true, x_inferred):
     reg = LinearRegression().fit(x_inferred,x_true)
     return reg.coef_,reg.predict(x_inferred)
 
+# %%
 def diag_reg(x_true, x_inferred):
     aligned = np.array([
         LinearRegression().fit(
@@ -138,3 +140,17 @@ def diag_reg(x_true, x_inferred):
         for i in range(x_inferred.shape[1])
     ]).squeeze().T
     return aligned
+
+# %%
+def lr_integrator_cnn(D: int):
+    O = ortho_group.rvs(D)
+    eig_vals = np.diag(np.exp(np.linspace(0,-1,D)))
+    A = -np.eye(D)+O@eig_vals@O.T
+    return A
+
+# %%
+def ff_integrator_cnn(D: int):
+    O = ortho_group.rvs(D)
+    T = np.eye(D,k=1) + .5*np.hstack((np.zeros((D,D-1)),np.ones((D,1))))
+    A = -np.eye(D)+O@T@O.T
+    return A
