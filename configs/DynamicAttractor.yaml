@@ -1,0 +1,29 @@
+dataset_params:
+  class: DynamicAttractor
+  a1: -20 
+  a2: 1.2
+  sigma: 0.
+  D: 2
+
+  T: 10
+  dt: .05
+  K: 20
+
+  stim_d: 1.
+  repetition: 5
+  stim_sigma: .5
+
+model_params:
+  D: 2
+  dt: .05
+
+  emission: NeuralNetEmission
+  lds: iConstrainedLDS
+  likelihood: NormalConditionalLikelihood
+
+  seed: 1
+
+variational_params:
+  gamma: 1
+  n_iter: 500
+  step_size: 0.01
