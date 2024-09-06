@@ -1,6 +1,6 @@
 # Interventional State Space Models
 
-![Interventional State Space Models](https://github.com/user-attachments/files/16911142/Fig1.pdf)
+![Interventional State Space Models](https://github.com/user-attachments/assets/5117a1aa-7e42-4070-afeb-d24853744f01)
 
 
 Causality is at the heart of neuroscience. Popular definitions of causality utilize interventions to capture the causal effect of one node on another. It has been shown that observational statistics falls short of determining causal directions in the absence of interventional data. Here, we introduce a new class of state space models (SSM) called Interventional SSM (iSSM) that explicitly model interventional inputs to build causal models of dynamical systems.
