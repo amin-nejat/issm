@@ -99,13 +99,18 @@ def stimulation_protocol(
     Returns:
         [type]: [description]
     """
+
+    t_eval = np.arange(time_st,time_en,dt)
+    
+    if stim_d == 0 or repetition == 0:
+        return np.zeros((len(t_eval),N)),stimulated
     
     t_stim = jnp.linspace(
          time_st,time_en,
          len(stimulated)*repetition*int((stim_d+rest_d)/stim_d)
     )
     I_ = np.zeros((len(t_stim),N))
-    
+
     for r in range(repetition):
         for idx,i in enumerate(stimulated):
             time_idx = r*len(stimulated)+idx
@@ -119,7 +124,7 @@ def stimulation_protocol(
     
     inp = interpolate.interp1d(t_stim,I_.T,kind='nearest',bounds_error=False)
     k1,key = jax.random.split(key,2)
-    t_eval = np.arange(time_st,time_en,dt)
+    
 
     I = inp(t_eval)
     I = I + (I != 0)*sigma*np.random.normal(size=I.shape)

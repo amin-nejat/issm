@@ -9,9 +9,11 @@ import inference
 import visualizations
 import loader
 import utils
-
+import params
 import jax.numpy as jnp
+import jax.random as jxr
 import jax
+from jax import vmap
 
 import argparse
 import yaml
@@ -35,7 +37,7 @@ if __name__ == '__main__':
     args = get_args()
     with open(args.config, 'r') as stream: pm = yaml.safe_load(stream)
 
-    dataset_params, model_params, variational_params = pm['dataset_params'], pm['model_params'], pm['variational_params']
+    stim_params, dataset_params, model_params, variational_params = pm['stim_params'], pm['dataset_params'], pm['model_params'], pm['variational_params']
 
     seed = pm['model_params']['seed']
     file = args.output
@@ -59,9 +61,9 @@ if __name__ == '__main__':
             dt=dataset_params['dt'],N=dataset_params['D'],
             stimulated=jnp.arange(dataset_params['D']),
             amplitude=1*jnp.ones(dataset_params['D']),
-            stim_d=dataset_params['stim_d'],
-            repetition=dataset_params['repetition'],
-            sigma=dataset_params['stim_sigma']
+            stim_d=stim_params['stim_d'],
+            repetition=stim_params['repetition'],
+            sigma=stim_params['stim_sigma']
         )
         u.append(u_)
 
@@ -75,34 +77,61 @@ if __name__ == '__main__':
     )
     y_ = dataloader.obs(x_)
     y = jnp.array([y_[:,i] for i in range(y_.shape[1])])
+    x = jnp.array([x_[:,i] for i in range(x_.shape[1])])
     
 
     K,T,N = y.shape
     
     # Create model instances used for fitting
-    k1, k2, key = jax.random.split(key,3)
-
-    initial = models.InitialCondition(model_params['D'])
-    lds = eval('models.'+model_params['lds'])(
-        key=k1,D=model_params['D'],M=N,
-        initial=initial,dt=model_params['dt'],
-        B=dataloader.B,g=1,
-        scale_tril=jnp.eye(model_params['D'])*model_params['dynamics_noise_scale']
-    )
-    
     k1, key = jax.random.split(key,2)
-    emission = eval('models.'+model_params['emission'])(model_params['D'],N,key=k1)
-    likelihood = eval('models.'+model_params['likelihood'])(
-        N,
-        scale_tril=jnp.eye(model_params['D'])*model_params['likelihood_noise_scale']
+
+    initial_params = params.ParamsNormal(
+        mu = jnp.zeros(model_params['D']),
+        scale_tril = model_params['dt']*jnp.eye(model_params['D'])
     )
-    joint = models.JointfLDS(lds,emission,likelihood)
+
+    initial = models.InitialCondition(model_params['D'],initial_params)
+
+    lds_params = params.ParamsLinearDynamics(
+        scale_tril = model_params['dt']*jnp.eye(model_params['D']),
+        A = jxr.normal(k1, shape=(model_params['D'],model_params['D'])),
+        B = jnp.eye(model_params['D']),
+        initial = initial_params
+    )
+
+    lds_config = model_params['lds_params']
+
+    lds = models.LinearDynamics(
+        D=model_params['D'],
+        M=N,
+        initial=initial,
+        params=lds_params,
+        dt=model_params['dt'],
+        train_B=lds_config['train_B'],
+        sparsity=lds_config['sparsity'] if lds_config['train_B'] else 0.,
+        interventional=lds_config['interventional']
+    )
+
+        
+    likelihood_params = params.ParamsConditionalNormal(
+        scale_tril = model_params['likelihood_noise_scale']*jnp.eye(N)
+    )
+    likelihood = eval('models.'+model_params['likelihood'])(
+        N,likelihood_params
+    )
+
+
+    k1, key = jax.random.split(key,2)
+    emission = eval('models.'+model_params['emission'])(model_params['D'],N,key=k1,**model_params['emission_params'])
+    
+    joint = models.fLDS(lds,emission,likelihood)
 
     k1, key = jax.random.split(key,2)
 
     # Create recognition instance for inference
-    recognition = eval('inference.'+'AmortizedLSTM')(
-        D=model_params['D'],N=N,M=N,T=T,key=k1
+    recognition = inference.AmortizedLSTM(
+        D=model_params['D'],N=N,M=N,T=T,key=k1,
+        interventional=lds_config['interventional']
     )
 
     # Run inference
@@ -118,54 +147,34 @@ if __name__ == '__main__':
     # Visualize loss
     visualizations.plot_loss(
         loss,ylabel='ELBO',save=True,file=file+'loss'
-    )
+    )   
+    
+    k1, k2, key = jxr.split(key,3)
 
-    k1, key = jax.random.split(key,2)
+    
+    x_smooth = vmap(
+        lambda y,u: recognition(recognition.params,k1,y,u)[0],
+        in_axes=(0,0),out_axes=0
+    )(y,u)
 
+    mean = vmap(
+        lambda x: emission(emission.params,x),
+        in_axes=(0),out_axes=0
+    )(x_smooth)
 
-    x_corr, y_corr = [], []    
-    for i in range(len(u)):
-        k1, key = jax.random.split(key,2)
-        x_smooth, lp = recognition.f(k1,y[i],u[i],recognition.params,lds.B)
-        rate_smooth = emission.f(x_smooth,emission.params)
-        
-        k1, key = jax.random.split(key,2)
-        y_smooth = likelihood.sample(rate_smooth,key=k1)
+    y_smooth = vmap(
+        lambda mu: likelihood.sample(likelihood_params,mu,key=k2),
+        in_axes=(0),out_axes=0
+    )(mean)
 
-        # TODO: Is this comparable across different stimulation protocols
-        y_corr.append(
-            jnp.corrcoef(
-            y_smooth[u[i]==0].flatten(),
-            y[i][u[i]==0].flatten()
-            )[0,1]
-        )
+    stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
 
-        # TODO: Is this comparable across different stimulation protocols
-        x_corr.append(
-            jnp.corrcoef(
-            x_smooth[u[i]==0].flatten(),
-            x_[:,i][u[i]==0].flatten()
-            )[0,1]
-        )
-        if i < 3 :
-            visualizations.plot_signals(
-                [x_[:,i],x_smooth],inp=u[i],
-                colors=['k','r'],titlestr='$x$',labels=['True','Inferred'],
-                save=True,file=file+'x_'+str(i)
-            )
-            visualizations.plot_signals(
-                [y[i],rate_smooth],inp=u[i],
-                colors=['k','r'],titlestr='$y$',labels=['True','Inferred'],
-                save=True,file=file+'y_'+str(i)
-            )
 
     stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
     stats = {
         'stim_d': stim_frac(u.flatten()),
-        'y-corr-train': y_corr,
-        'x-corr-train': x_corr,
+        'y-corr-train': [jnp.corrcoef(mean[i].flatten(),y[i].flatten())[0,1] for i in range(len(y))],
+        'x-corr-train':  [jnp.corrcoef(x_smooth[i].flatten(),x[i].flatten())[0,1] for i in range(len(y))],
     }
 
     jnp.save(file+'stats',stats)
-        
-

@@ -19,10 +19,11 @@ from jaxtyping import Array, Float
 
 # %%
 class VariationalLSTM:
-    def __init__(self,shape):
+    def __init__(self,shape,interventional: bool):
         self.shape = shape
         self.f_mu = [nn.softmax]
         self.f_scale = [nn.softmax]
+        self.interventional = interventional
     
     def init(self, key: jxr.PRNGKey, fs, shape):
         vars = []
@@ -57,7 +58,10 @@ class VariationalLSTM:
         sg = self._apply(params.theta_scale,self.f_scale,data).reshape(self.shape)
 
         Bu = jnp.einsum('tn,dn->td',u,params.B)
-        mu = (Bu==0).astype(float)*(mu)+Bu
+        if self.interventional:
+            mu = (Bu==0).astype(float)*(mu)+Bu
+        else:
+            mu = mu+Bu
 
         sample = dist.Normal(mu,sg).sample(key)
         lp = dist.Normal(mu,sg).log_prob(sample)
@@ -72,9 +76,12 @@ class VariationalLSTM:
         ):
         data = jnp.hstack((y,u))[None]
         mu = self._apply(params.theta_mu,self.f_mu,data).reshape(self.shape)
-        
+
         Bu = jnp.einsum('tn,dn->td',u,params.B)
-        mu = (Bu==0).astype(float)*(mu)+Bu
+        if self.interventional:
+            mu = (Bu==0).astype(float)*(mu)+Bu
+        else:
+            mu = mu+Bu
         
         return mu[0]
     
@@ -92,10 +99,10 @@ class VariationalLSTM:
 class AmortizedLSTM(VariationalLSTM):
     """Differentiable representation of RNN for inference"""
     
-    def __init__(self, D: int, N: int, M: int, key: jxr.PRNGKey, H: int = 10, T: int = 10):
+    def __init__(self, D: int, N: int, M: int, key: jxr.PRNGKey, interventional: bool, H: int = 10, T: int = 10):
         '''initialize an instance
         '''        
-        super(AmortizedLSTM, self).__init__(shape=(1,T,D))
+        super(AmortizedLSTM, self).__init__(shape=(1,T,D),interventional=interventional)
         
         self.f_mu = [
             nn.RNN(nn.LSTMCell(H)),

@@ -33,9 +33,12 @@ colors_ = np.concatenate((
 # %%
 def plot_image(
         data, 
-        inputs,
+        inputs=None,
         t=None,
         clim=None,
+        cmap='gray',
+        xlabel='Time',
+        ylabel='$y$',
         fontsize=15,
         titlestr='', 
         save=False, 
@@ -45,7 +48,7 @@ def plot_image(
     plt.figure(figsize=(3,5))
     plt.imshow(
         data.T, 
-        'gray', 
+        cmap, 
         alpha=1, 
         aspect='auto', 
         interpolation='none'
@@ -61,14 +64,15 @@ def plot_image(
         ax.add_patch(rect)
         return rect
 
-    u_x,u_y = np.where(inputs!=0)
-    for i in range(len(u_x)):
-        highlight_cell(
-            u_x[i],u_y[i],
-            color='blue',linewidth=.1
-        )
+    if inputs is not None:
+        u_x,u_y = np.where(inputs!=0)
+        for i in range(len(u_x)):
+            highlight_cell(
+                u_x[i],u_y[i],
+                color='blue',linewidth=.1
+            )
 
-    plt.xlabel('Time',fontsize=fontsize)
+    plt.xlabel(xlabel,fontsize=fontsize)
     plt.title(titlestr,fontsize=fontsize)
     if t is not None:
         plt.xticks(np.arange(len(t)),['{:.2f}'.format(t_) for t_ in t],fontsize=fontsize)
@@ -76,7 +80,7 @@ def plot_image(
         plt.xticks(fontsize=fontsize)
         
     plt.yticks(fontsize=fontsize)
-    plt.ylabel('$y$',fontsize=fontsize)
+    plt.ylabel(ylabel,fontsize=fontsize)
     plt.gca().xaxis.set_major_locator(plt.MaxNLocator(4))
     plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
     plt.grid(False)
@@ -263,58 +267,51 @@ def plot_loss(loss,ylabel='',fontsize=15,save=False,file=None):
 def plot_performance(
         dims,
         performance,
-        labels,
+        ylabel,
+        legends=None,
         titlestr='',
         xlabel='Latent Dimension',
+        error='std',
         fontsize=15,
         save=False,
         file=None
     ):
+
+    plt.figure(figsize=(3,2))
     keys = list(performance.keys())
+
     for i,key in enumerate(keys):
-        plt.figure(figsize=(3,2))
+        if error == 'std':
+            yerr = np.nanstd(np.array(performance[key]),axis=1)
+        if error == 'sem':
+            yerr = stats.sem(np.array(performance[key]),axis=1,nan_policy='omit')
 
-        if len(performance[key].shape)==2:
-            plt.errorbar(
-                dims,np.nanmean(performance[key],1),
-                yerr=stats.sem(np.array(performance[key]),axis=1,nan_policy='omit'),
-                lw=3,color='k'
-            )
-        else:
-            plt.errorbar(
-                dims,np.nanmean(performance[key][:,0],1),
-                yerr=stats.sem(np.array(performance[key][:,0]),axis=1,nan_policy='omit'),
-                label='Observational',
-                lw=3
-            )
+        plt.errorbar(
+            dims,np.nanmean(performance[key],1),
+            yerr=yerr,
+            lw=3,label=legends[i] if legends is not None else None
+        )
+        
 
-            plt.errorbar(
-                dims,np.nanmean(performance[key][:,1],1),
-                yerr=stats.sem(np.array(performance[key][:,1]),axis=1,nan_policy='omit'),
-                label='Interventional',
-                lw=3
-            )
+    plt.legend(fontsize=fontsize)
+    plt.xticks(fontsize=fontsize)
+    plt.xlabel(xlabel,fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
+    plt.ylabel(ylabel,fontsize=fontsize)
 
-        if len(performance[key].shape) > 2:
-            plt.legend(fontsize=fontsize)
-        plt.xticks(fontsize=fontsize)
-        plt.xlabel(xlabel,fontsize=fontsize)
-        plt.yticks(fontsize=fontsize)
-        plt.ylabel(labels[i],fontsize=fontsize)
+    plt.title(titlestr,fontsize=fontsize)
 
-        plt.title(titlestr,fontsize=fontsize)
+    # plt.gca().xaxis.set_major_locator(plt.MaxNLocator(3))
+    plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
 
-        # plt.gca().xaxis.set_major_locator(plt.MaxNLocator(3))
-        plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
+    plt.grid(False)
 
-        plt.grid(False)
-
-        if save:
-            plt.savefig(file+key+'.png',format='png')
-            plt.savefig(file+key+'.pdf',format='pdf')
-            plt.close('all')
-        else:
-            plt.show()
+    if save:
+        plt.savefig(file+key+'.png',format='png')
+        plt.savefig(file+key+'.pdf',format='pdf')
+        plt.close('all')
+    else:
+        plt.show()
 
 # %%
 def plot_states_3d(
@@ -504,6 +501,7 @@ def plot_signals(
 def flow_2d(
         fun,
         data=None,
+        inputs=None,
         xlim=[-1,1],
         ylim=[-1,1],
         n_points=10,
@@ -552,7 +550,13 @@ def flow_2d(
 
     if data is not None:
         for i in range(len(data)):
-            plt.plot(data[i,:,0],data[i,:,1], 'b', lw=.5)
+            plt.plot(data[i,:,0],data[i,:,1], 'k', lw=.1)
+            if inputs is not None:
+                plt.scatter(
+                    data[i][inputs[i].sum(1)!=0,0],
+                    data[i][inputs[i].sum(1)!=0,1],
+                    lw=.1,c='b',
+                )
     
     
     plt.tight_layout()

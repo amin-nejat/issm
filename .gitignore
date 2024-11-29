@@ -146,3 +146,8 @@ notebooks/figures/
 *.mp4
 *.png
 *.jpg
+
+
+# local files
+local_loader.py
+run_data.py

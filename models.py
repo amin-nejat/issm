@@ -81,7 +81,7 @@ class LinearEmission:
 
 # %%
 class NeuralNetEmission:
-    def __init__(self, D: int, N: int, key: jxr.PRNGKey, H: int=100):
+    def __init__(self, D: int, N: int, key: jxr.PRNGKey, H: int=100, constraint=None):
         """Initialize and instance of `NeuralNetEmission`
 
         Args:
@@ -94,14 +94,21 @@ class NeuralNetEmission:
         self.D = D
         self.N = N
 
+        architecture = [
+            stax.Dense(H),
+            stax.Tanh,
+            stax.Dense(H),
+            stax.Tanh,
+            stax.Dense(H),
+            stax.Tanh,
+            stax.Dense(N)
+        ]
+
+        if constraint is not None and constraint == 'positive':
+            architecture += [stax.Softplus]
+
         initialize, self.f =  stax.serial(
-            stax.Dense(H),
-            stax.Tanh,
-            stax.Dense(H),
-            stax.Tanh,
-            stax.Dense(H),
-            stax.Tanh,
-            stax.Dense(N),
+            *architecture
         )
         _, theta = initialize(key, (self.D,))
         self.params = ParamsNNEmissions(
@@ -115,8 +122,9 @@ class NeuralNetEmission:
 
 # %%
 class PoissonConditionalLikelihood:
-    def __init__(self, D: int):
+    def __init__(self, D: int, params={}):
         self.D = D
+        self.params = None
     
     def sample(self, params, suff_stats, key: jxr.PRNGKey):
         Y = dist.Poisson(suff_stats).to_event(1).sample(key)
@@ -171,7 +179,8 @@ class LinearDynamics:
             params: ParamsLinearDynamics,
             dt: float = .1, 
             sparsity: float = .1,
-            train_B: bool = False):
+            train_B: bool = False,
+            interventional: bool = True):
         """
         Args:
             D (int): Dynamics dimension.
@@ -187,6 +196,7 @@ class LinearDynamics:
         self.dt = dt 
         self.initial = initial
         self.sparsity = sparsity
+        self.interventional = interventional
         
         if not train_B: 
             self.B = params.B
@@ -194,6 +204,42 @@ class LinearDynamics:
 
         self.set_params(params)
         
+    def mean(self, params: ParamsLinearDynamics, T: int, key: jxr.PRNGKey, x0=None, u=None):
+        A, B = params.A, params.B
+        if B is None: B = self.B
+
+        @jit
+        def transition(carry, args):
+            xs = carry
+            u_new, _ = args
+            
+            inp = B@u_new
+
+            if self.interventional:
+                mu = (inp==0).astype(float)*((1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1]))+inp
+            else:
+                mu = (1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1])+inp
+            
+            xs = jnp.row_stack((xs[1:],mu))
+
+            return xs, None
+        
+        
+        if x0 is None:
+            x0 = self.initial.sample(params.initial,key)
+
+        if u is None:
+            u = jnp.zeros((T,self.M))
+
+        history = jnp.vstack((jnp.zeros((T-1,self.D)),x0[None]))
+        
+        xs, _ = lax.scan(
+            transition, 
+            history, 
+            (u[1:],jnp.arange(T-1))
+        )
+        
+        return xs
         
     
     def sample(self, params: ParamsLinearDynamics, T: int, key: jxr.PRNGKey, x0=None, u=None):
@@ -207,7 +253,12 @@ class LinearDynamics:
 
             k1, k = jxr.split(k,2)
             
-            mu = ((B@u_new)==0).astype(float)*((1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1]))+B@u_new
+            inp = B@u_new
+
+            if self.interventional:
+                mu = (inp==0).astype(float)*((1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1]))+inp
+            else:
+                mu = (1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1])+inp
             x_new = dist.MultivariateNormal(
                 mu, scale_tril=params.scale_tril
                 ).sample(k1)
@@ -242,8 +293,14 @@ class LinearDynamics:
         def transition(carry, args):
             xs, lp = carry
             x_new, u_new, _ = args
+            
+            inp = B@u_new
 
-            mu = ((B@u_new)==0).astype(float)*((1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1]))+B@u_new
+            if self.interventional:
+                mu = (inp==0).astype(float)*((1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1]))+inp
+            else:
+                mu = (1-self.dt)*xs[-1]+(self.dt)*(A@xs[-1])+inp
+
             lp += dist.MultivariateNormal(
                 mu,scale_tril=params.scale_tril
                 ).log_prob(x_new)
