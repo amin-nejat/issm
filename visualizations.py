@@ -39,13 +39,15 @@ def plot_image(
         cmap='gray',
         xlabel='Time',
         ylabel='$y$',
-        fontsize=15,
+        fontsize=20,
+        xticks=None,
+        yticks=None,
         titlestr='', 
         save=False, 
         file=None
     ):
     
-    plt.figure(figsize=(3,5))
+    plt.figure(figsize=(6,10))
     plt.imshow(
         data.T, 
         cmap, 
@@ -81,8 +83,16 @@ def plot_image(
         
     plt.yticks(fontsize=fontsize)
     plt.ylabel(ylabel,fontsize=fontsize)
-    plt.gca().xaxis.set_major_locator(plt.MaxNLocator(4))
-    plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
+    if xticks is None:
+        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(4))
+    else:
+        plt.xticks(np.arange(len(xticks)), xticks, fontsize=fontsize)
+
+    if yticks is None:
+        plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
+    else:
+        plt.yticks(np.arange(len(yticks)), yticks, fontsize=fontsize)
+
     plt.grid(False)
 
     
@@ -138,10 +148,12 @@ def compare_smoothened_predictions(Ey, Ey_true, Covy, data, xlim=None, save=Fals
 
 # %%
 def plot_states(
-        states,input=None,labels=None,colors=None,
+        states,input=None,labels=None,colors=None,new_fig=True,
         titlestr='',fontsize=15,save=False,file=None
     ):
-    plt.figure(figsize=(5,5))
+
+    if new_fig:
+        plt.figure(figsize=(5,5))
 
     
     if states[0].shape[1] == 2:
@@ -189,6 +201,33 @@ def plot_states(
     if label is not None:
         plt.legend(fontsize=fontsize)
     
+    if save:
+        plt.savefig(file+'.png',format='png')
+        plt.savefig(file+'.pdf',format='pdf')
+        plt.close('all')
+    else:
+        plt.show()
+
+
+# %%
+def plot_scatter(x,y,titlestr='',xlabel='',ylabel='',fontsize=15,save=False,file=None):
+    plt.axline((0, 0), slope=1, linestyle='--', color='k')
+    
+    plt.scatter(x,y)
+
+    plt.xlabel(xlabel,fontsize=fontsize)
+    plt.ylabel(ylabel,fontsize=fontsize)
+    
+    plt.xticks(fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
+
+    plt.title(titlestr,fontsize=fontsize)
+
+    plt.gca().xaxis.set_major_locator(plt.MaxNLocator(4))
+    plt.gca().yaxis.set_major_locator(plt.MaxNLocator(4))
+    
+    
+
     if save:
         plt.savefig(file+'.png',format='png')
         plt.savefig(file+'.pdf',format='pdf')
@@ -303,6 +342,7 @@ def plot_performance(
 
     # plt.gca().xaxis.set_major_locator(plt.MaxNLocator(3))
     plt.gca().yaxis.set_major_locator(plt.MaxNLocator(3))
+    plt.ylim([-.2,1.2])
 
     plt.grid(False)
 
@@ -389,7 +429,7 @@ def plot_violin(
         save=False,
         file=None
     ):
-    plt.figure(figsize=(5,5))
+    plt.figure(figsize=(3,5))
 
     
     violin = plt.violinplot(performance.values(),showmedians=True)
@@ -436,18 +476,19 @@ def plot_signals(
         titlestr='',
         fontsize=15,
         linewidth=2,
+        margin=1.,
         save=False,
         file=None
     ):
     plt.figure(figsize=(3,1*len(X[0].T)))
     
-    margin=1.
+    
     offset = np.append(0.0, np.nanmax(X[0][:,0:-1,],0)-np.nanmin(X[0][:,0:-1],0))
     shifts = np.cumsum(offset+margin)
     for i,x in enumerate(X):
         color = colors[i] if colors is not None else 'k'
         label = labels[i] if labels is not None else ''
-        s = (x-np.nanmin(x,0)[None,:]+shifts[None,:])
+        s = (x-np.nanmin(X[0],0)[None,:]+shifts[None,:])
         
         if t is not None: plt.plot(t,s,linewidth=linewidth,color=color,label=label)
         else: plt.plot(s,linewidth=linewidth,color=color,label=label)
@@ -499,7 +540,8 @@ def plot_signals(
 
 # %%
 def flow_2d(
-        fun,
+        funs,
+        colors=['k'],
         data=None,
         inputs=None,
         xlim=[-1,1],
@@ -510,6 +552,7 @@ def flow_2d(
         xlabel='$x^{(1)}$',
         ylabel='$x^{(2)}$',
         scale=1,
+        show=True,
         save=False,
         file=None
     ):
@@ -525,18 +568,23 @@ def flow_2d(
 
     # Create a quiver plot
     fig, ax = plt.subplots()
-    
-    Q = ax.quiver(
-        X, 
-        Y, 
-        np.zeros_like(X), 
-        np.zeros_like(Y), 
-        pivot='mid', 
-        scale=1
-    )
 
-    matrix = fun(np.stack((X.flatten(),Y.flatten())).T).T
-    Q.set_UVC(scale*matrix[0], scale*matrix[1])
+    for i in range(len(funs)):
+        fun = funs[i]
+        color = colors[i]
+
+        Q = ax.quiver(
+            X, 
+            Y, 
+            np.zeros_like(X), 
+            np.zeros_like(Y), 
+            pivot='mid', 
+            scale=1,
+            color=color
+        )
+
+        matrix = fun(np.stack((X.flatten(),Y.flatten())).T).T
+        Q.set_UVC(scale*matrix[0], scale*matrix[1])
 
     plt.xlabel(xlabel,fontsize=fontsize)
     plt.ylabel(ylabel,fontsize=fontsize)
@@ -566,5 +614,6 @@ def flow_2d(
         plt.savefig(file+'.pdf',format='pdf')
         plt.close('all')
     else:
-        plt.show()
+        if show:
+            plt.show()
     

@@ -44,12 +44,15 @@ if __name__ == '__main__':
 
     if not os.path.exists(file): os.makedirs(file)
 
-    # Create a data loader and load training data
-    # dataloader = loader.iPfLDSLoader(dataset_params)
-    # y,u = dataloader.load_data()
-    
+
     key = jax.random.PRNGKey(seed)
     k1, key = jax.random.split(key,2)
+
+    if "N" in dataset_params:
+        C = jxr.orthogonal(k1, n=dataset_params['N'])[:dataset_params['D'],:] 
+        # C = jxr.normal(k1,shape=(dataset_params['D'],dataset_params['N']))
+        dataset_params['C'] = C
+
 
     dataloader = eval('loader.'+dataset_params['class'])(dataset_params)
 
@@ -71,16 +74,20 @@ if __name__ == '__main__':
 
     t,x_ = dataloader.run(
         dataset_params['T'],dt=dataset_params['dt'],u=u,
-        x0=.01*jax.random.normal(
+        x0=1*jax.random.normal(
             k1,shape=(dataset_params['K'],dataset_params['D'])
         )
     )
     y_ = dataloader.obs(x_)
-    y = jnp.array([y_[:,i] for i in range(y_.shape[1])])
-    x = jnp.array([x_[:,i] for i in range(x_.shape[1])])
+
+    y_ += dataset_params['obs_noise_scale']*jxr.normal(k1,shape=y_.shape)
     
+    y = y_.transpose(1,0,2)
+    x = x_.transpose(1,0,2)
 
     K,T,N = y.shape
+
+    print(K,T,N)
     
     # Create model instances used for fitting
     k1, key = jax.random.split(key,2)
@@ -103,7 +110,7 @@ if __name__ == '__main__':
 
     lds = models.LinearDynamics(
         D=model_params['D'],
-        M=N,
+        M=model_params['D'],
         initial=initial,
         params=lds_params,
         dt=model_params['dt'],
@@ -122,7 +129,12 @@ if __name__ == '__main__':
 
 
     k1, key = jax.random.split(key,2)
-    emission = eval('models.'+model_params['emission'])(model_params['D'],N,key=k1,**model_params['emission_params'])
+    emission = eval('models.'+model_params['emission'])(
+        model_params['D'],
+        N,
+        key=k1,
+        **model_params['emission_params']
+    )
     
     joint = models.fLDS(lds,emission,likelihood)
 
@@ -130,7 +142,7 @@ if __name__ == '__main__':
 
     # Create recognition instance for inference
     recognition = inference.AmortizedLSTM(
-        D=model_params['D'],N=N,M=N,T=T,key=k1,
+        D=model_params['D'],N=N,M=model_params['D'],T=T,key=k1,
         interventional=lds_config['interventional']
     )
 
@@ -151,6 +163,36 @@ if __name__ == '__main__':
     
     k1, k2, key = jxr.split(key,3)
 
+
+
+    # # Test data
+    # k1, key = jax.random.split(key,2)
+    # u = []
+    # for i in range(dataset_params['K']):
+    #     u_,_ = utils.stimulation_protocol(
+    #         k1,time_st=0,time_en=dataset_params['T'],
+    #         dt=dataset_params['dt'],N=dataset_params['D'],
+    #         stimulated=jnp.arange(dataset_params['D']),
+    #         amplitude=1*jnp.ones(dataset_params['D']),
+    #         stim_d=stim_params['stim_d'],
+    #         repetition=stim_params['repetition'],
+    #         sigma=stim_params['stim_sigma']
+    #     )
+    #     u.append(u_)
+
+    # u = jnp.array(u)
+
+    # t,x_ = dataloader.run(
+    #     dataset_params['T'],dt=dataset_params['dt'],u=u,
+    #     x0=.01*jax.random.normal(
+    #         k1,shape=(dataset_params['K'],dataset_params['D'])
+    #     )
+    # )
+    # y_ = dataloader.obs(x_)
+    
+    # y = y_.transpose(1,0,2)
+    # x = x_.transpose(1,0,2)
+
     
     x_smooth = vmap(
         lambda y,u: recognition(recognition.params,k1,y,u)[0],
@@ -167,14 +209,16 @@ if __name__ == '__main__':
         in_axes=(0),out_axes=0
     )(mean)
 
-    stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
 
 
     stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
     stats = {
         'stim_d': stim_frac(u.flatten()),
-        'y-corr-train': [jnp.corrcoef(mean[i].flatten(),y[i].flatten())[0,1] for i in range(len(y))],
-        'x-corr-train':  [jnp.corrcoef(x_smooth[i].flatten(),x[i].flatten())[0,1] for i in range(len(y))],
+        # 'y-corr-train': [jnp.corrcoef(mean[i].flatten(),y[i].flatten())[0,1] for i in range(len(y))],
+        # 'x-corr-train':  [jnp.corrcoef(x_smooth[i].flatten(),x[i].flatten())[0,1] for i in range(len(y))],
+        'x-corr-train': jnp.corrcoef(x[u==0].flatten(),x_smooth[u==0].flatten())[0,1],
+        'y-corr-train': jnp.corrcoef(y.flatten(),y_smooth.flatten())[0,1]
     }
 
     jnp.save(file+'stats',stats)
+# %%

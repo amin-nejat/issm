@@ -188,7 +188,7 @@ class Linear(RateModel):
 
 # %%
 class RotationalDynamics(RateModel):
-    def __init__(self,pm,discrete=True,B=None):
+    def __init__(self,pm,discrete=False,B=None):
         keys = pm.keys()
 
         assert 'sigma' in keys and 'a' in keys
@@ -201,7 +201,8 @@ class RotationalDynamics(RateModel):
         dx = np.stack([
             0*x[:,0],
             self.pm['a']*x[:,0]
-            ]).T
+            ],
+        ).T
 
         dxdt = dx+dw
         return dxdt
@@ -210,10 +211,16 @@ class RotationalDynamics(RateModel):
         y = np.stack((
             x[...,0] * np.cos(x[...,1]),
             x[...,0] * np.sin(x[...,1])
-            ),axis=-1)
+        ),axis=-1)
+        if 'C' in self.pm:
+            y = np.einsum('tkd,dn->tkn',y,self.pm['C'])
+            
         return y
 
     def inv_obs(self,y,t=None,u=None):
+        if 'C' in self.pm:
+            y = np.einsum('tkn,nd->tkd',y,np.linalg.pinv(self.pm['C']))
+
         x = np.stack((
             np.sqrt(y[...,0]**2 + y[...,1]**2),
             np.arctan2(y[...,1], y[...,0])
@@ -222,7 +229,7 @@ class RotationalDynamics(RateModel):
 
 # %%
 class DynamicAttractor(RateModel):
-    def __init__(self,pm,discrete=True,B=None):
+    def __init__(self,pm,discrete=False,B=None):
         keys = pm.keys()
         assert 'sigma' in keys and 'a1' in keys and 'a2' in keys
         super(DynamicAttractor, self).__init__(
@@ -233,7 +240,8 @@ class DynamicAttractor(RateModel):
         dx = np.stack([
             self.pm['a1']*x[:,0],
             self.pm['a2']*(1-x[:,0])
-            ]).T
+            ],
+        ).T
 
         dxdt = dx+dw
         return dxdt
@@ -242,12 +250,19 @@ class DynamicAttractor(RateModel):
         y = np.stack((
             (1-x[...,0]) * np.cos(x[...,1]),
             (1-x[...,0]) * np.sin(x[...,1])
-            ),axis=-1)
+        ),axis=-1)
+        
+        if 'C' in self.pm:
+            y = np.einsum('tkd,dn->tkn',y,self.pm['C'])
+        
         return y
 
     def inv_obs(self,y,t=None,u=None):
+        if 'C' in self.pm:
+            y = np.einsum('tkn,nd->tkd',y,np.linalg.pinv(self.pm['C']))
+
         x = np.stack((
             1-np.sqrt(y[...,0]**2 + y[...,1]**2),
             np.arctan2(y[...,1], y[...,0])
-            ),axis=-1)
+        ),axis=-1)
         return x

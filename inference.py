@@ -12,6 +12,7 @@ from jax import jit, value_and_grad, vmap
 
 from tqdm.auto import trange
 import flax.linen as nn
+import jax
 
 from models import fLDS
 from params import ParamsVariationalLSTM
@@ -137,9 +138,11 @@ def infer(
         u: Float[Array, "num_batches num_timesteps stim_dim"],
         n_iter: int = 100,
         step_size: float = .1,
+        b1: float = .8,
+        b2: float = .9,
         gamma: float = 1.
     ):
-    opt_init, opt_update, get_params = optimizers.adam(step_size)
+    opt_init, opt_update, get_params = optimizers.adam(step_size,b1=b1,b2=b2)
     opt_state = opt_init((recognition.params, joint.params))
 
     # TODO: Fix batch size and log prior
@@ -223,6 +226,7 @@ def infer(
 
 # %%
 def solve_lds(
+        key: jxr.PRNGKey,
         joint: fLDS,
         recognition: AmortizedLSTM,
         y: Float[Array, "num_batches num_timesteps emission_dim"],
@@ -231,31 +235,40 @@ def solve_lds(
         step_size: float = .1,
     ):
 
-    opt_init, opt_update, get_params = optimizers.adam(step_size)
+    opt_init, opt_update, get_params = optimizers.adam(step_size,b1=.8,b2=.9)
     opt_state = opt_init(joint.dynamics.params)
     
     params = get_params(opt_state)    
     
 
-    def batch_ll(params,y,u):
-        def ll(params,y,u):
-            x = recognition.posterior_mean(y,u,recognition.params)
+    def batch_ll(params,key,y,u):
+        def ll(params,key,y,u):
+            k1, key = jxr.split(key,2)
+            # x = recognition.posterior_mean(recognition.params,y,u)
+            x,_ = recognition(recognition.params,k1,y,u)
             # negative log likelihood
-            nll = -joint.dynamics.log_prob(x,u,params)
-            return  nll.mean()
+            ll = joint.dynamics.log_prob(params,x,u)
+            return  ll.sum()
 
         fun = vmap(
-            lambda y,u: ll(params,y,u),
+            lambda y,u: ll(params,key,y,u),
             in_axes=(0,0),
             out_axes=0
         )
-        nll = fun(y,u)
-        
-        return nll.mean()
+        ll_ = fun(y,u)
+        '''
+        \\log p_{\\theta}(y) = \\log \\int log p_{\theta}(x,y)
+            = \\log \\E_{x} p_{\\theta}(x,y)
+            \\approx \\log \\sum_{k} p_{\\theta}(x_k,y) where x_k \\sim p(x_k)
+            = logsumexp(\\log p_{\\theta}(x_k,y))
+        '''
+        nll = -jax.scipy.special.logsumexp(ll_)
+
+        return nll
 
     @jit
-    def update(params,y,u,i,opt_state):
-        loss, grads = value_and_grad(batch_ll)(params,y,u)
+    def update(params,key,y,u,i,opt_state):
+        loss, grads = value_and_grad(batch_ll)(params,key,y,u)
         opt_state = opt_update(i, grads, opt_state)
         params = get_params(opt_state)
         return loss, opt_state, params
@@ -266,7 +279,8 @@ def solve_lds(
 
     losses = []
     for i in pbar:
-        loss, opt_state, params = update(params,y,u,i,opt_state)
+        key, k1 = jxr.split(key,2)
+        loss, opt_state, params = update(params,k1,y,u,i,opt_state)
         losses.append(loss)
 
         if i % 10 == 0:
