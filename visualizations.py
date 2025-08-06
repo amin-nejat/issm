@@ -148,8 +148,15 @@ def compare_smoothened_predictions(Ey, Ey_true, Covy, data, xlim=None, save=Fals
 
 # %%
 def plot_states(
-        states,input=None,labels=None,colors=None,new_fig=True,
-        titlestr='',fontsize=15,save=False,file=None
+        states,
+        input=None,
+        labels=None,
+        colors=None,
+        new_fig=True,
+        titlestr='',
+        fontsize=15,
+        save=False,
+        file=None
     ):
 
     if new_fig:

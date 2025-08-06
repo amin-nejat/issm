@@ -214,11 +214,14 @@ if __name__ == '__main__':
     stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
     stats = {
         'stim_d': stim_frac(u.flatten()),
-        # 'y-corr-train': [jnp.corrcoef(mean[i].flatten(),y[i].flatten())[0,1] for i in range(len(y))],
-        # 'x-corr-train':  [jnp.corrcoef(x_smooth[i].flatten(),x[i].flatten())[0,1] for i in range(len(y))],
         'x-corr-train': jnp.corrcoef(x[u==0].flatten(),x_smooth[u==0].flatten())[0,1],
         'y-corr-train': jnp.corrcoef(y.flatten(),y_smooth.flatten())[0,1]
     }
+
+    stats['lds_A'] = lds.params.A
+    if 'A' in dataloader.pm:
+        stats['A'] = dataloader.pm['A']
+    
 
     jnp.save(file+'stats',stats)
 # %%

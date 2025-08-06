@@ -185,6 +185,32 @@ class Linear(RateModel):
         
         return dxdt
     
+# %%
+class FFIntegrator(Linear):
+    def __init__(self,pm,discrete=False,B=None):
+        keys = pm.keys()
+        assert 'sigma' in keys
+        pm['A'] = utils.ff_integrator_cnn(pm['D'])
+        super(FFIntegrator, self).__init__(
+            pm,discrete=discrete,B=B
+        )
+
+    def obs(self,x,t=None,u=None):
+        return x.copy()
+
+# %%
+class LRIntegrator(Linear):
+    def __init__(self,pm,discrete=False,B=None):
+        keys = pm.keys()
+        assert 'sigma' in keys
+        pm['A'] = utils.lr_integrator_cnn(pm['D'])
+        super(LRIntegrator, self).__init__(
+            pm,discrete=discrete,B=B
+        )
+
+    def obs(self,x,t=None,u=None):
+        return x.copy()
+    
 
 # %%
 class RotationalDynamics(RateModel):
