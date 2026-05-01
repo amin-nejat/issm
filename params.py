@@ -28,6 +28,12 @@ class ParamsLinearDynamics(NamedTuple):
     B: Float[Array, "input_dim state_dim"]
     initial: ParamsNormal
 
+class ParamsMLPDynamics(NamedTuple):
+    scale_tril: Float[Array, "state_dim state_dim"]
+    mlp_params: tuple
+    B: Float[Array, "input_dim state_dim"]
+    initial: ParamsNormal
+
 class ParamsfLDS(NamedTuple):
     emissions: ParamsNNEmissions
     dynamics: ParamsLinearDynamics

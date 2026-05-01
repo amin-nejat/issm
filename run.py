@@ -99,25 +99,53 @@ if __name__ == '__main__':
 
     initial = models.InitialCondition(model_params['D'],initial_params)
 
-    lds_params = params.ParamsLinearDynamics(
-        scale_tril = model_params['dt']*jnp.eye(model_params['D']),
-        A = jxr.normal(k1, shape=(model_params['D'],model_params['D'])),
-        B = jnp.eye(model_params['D']),
-        initial = initial_params
-    )
+    dynamics_name = model_params.get('dynamics', 'LinearDynamics')
+    if dynamics_name == 'LinearDynamics':
+        dyn_params = params.ParamsLinearDynamics(
+            scale_tril = model_params['dt']*jnp.eye(model_params['D']),
+            A = jxr.normal(k1, shape=(model_params['D'],model_params['D'])),
+            B = jnp.eye(model_params['D']),
+            initial = initial_params
+        )
 
-    lds_config = model_params['lds_params']
+        dyn_config = model_params.get('lds_params', {'train_B': False, 'sparsity': 0.0, 'interventional': True})
 
-    lds = models.LinearDynamics(
-        D=model_params['D'],
-        M=model_params['D'],
-        initial=initial,
-        params=lds_params,
-        dt=model_params['dt'],
-        train_B=lds_config['train_B'],
-        sparsity=lds_config['sparsity'] if lds_config['train_B'] else 0.,
-        interventional=lds_config['interventional']
-    )
+        dynamics = models.LinearDynamics(
+            D=model_params['D'],
+            M=model_params['D'],
+            initial=initial,
+            params=dyn_params,
+            dt=model_params['dt'],
+            train_B=dyn_config['train_B'],
+            sparsity=dyn_config['sparsity'] if dyn_config['train_B'] else 0.,
+            interventional=dyn_config['interventional']
+        )
+    elif dynamics_name == 'AnalyticMLPDynamics':
+        dyn_params = params.ParamsMLPDynamics(
+            scale_tril = model_params['dt']*jnp.eye(model_params['D']),
+            mlp_params = None,
+            B = jnp.eye(model_params['D']),
+            initial = initial_params
+        )
+
+        dyn_config = model_params.get('mlp_params', {})
+
+        dynamics = models.AnalyticMLPDynamics(
+            D=model_params['D'],
+            M=model_params['D'],
+            initial=initial,
+            params=dyn_params,
+            dt=model_params['dt'],
+            train_B=dyn_config.get('train_B', False),
+            interventional=dyn_config.get('interventional', True),
+            hidden_dim=dyn_config.get('hidden_dim', 100),
+            num_hidden_layers=dyn_config.get('num_hidden_layers', 1),
+            activation=dyn_config.get('activation', 'gelu'),
+            init_scale=dyn_config.get('init_scale', 0.01),
+            key=k1
+        )
+    else:
+        raise ValueError(f"Unknown dynamics model: {dynamics_name}")
 
         
     likelihood_params = params.ParamsConditionalNormal(
@@ -136,14 +164,14 @@ if __name__ == '__main__':
         **model_params['emission_params']
     )
     
-    joint = models.fLDS(lds,emission,likelihood)
+    joint = models.fLDS(dynamics,emission,likelihood)
 
     k1, key = jax.random.split(key,2)
 
     # Create recognition instance for inference
     recognition = inference.AmortizedLSTM(
         D=model_params['D'],N=N,M=model_params['D'],T=T,key=k1,
-        interventional=lds_config['interventional']
+        interventional=dyn_config.get('interventional', True)
     )
 
     # Run inference
@@ -218,7 +246,8 @@ if __name__ == '__main__':
         'y-corr-train': jnp.corrcoef(y.flatten(),y_smooth.flatten())[0,1]
     }
 
-    stats['lds_A'] = lds.params.A
+    if hasattr(dynamics.params, 'A'):
+        stats['lds_A'] = dynamics.params.A
     if 'A' in dataloader.pm:
         stats['A'] = dataloader.pm['A']
     
