@@ -169,7 +169,7 @@ if __name__ == '__main__':
     k1, key = jax.random.split(key,2)
 
     # Create recognition instance for inference
-    recognition = inference.AmortizedLSTM(
+    recognition = inference.AmortizedTransformer(
         D=model_params['D'],N=N,M=model_params['D'],T=T,key=k1,
         interventional=dyn_config.get('interventional', True)
     )
@@ -193,35 +193,7 @@ if __name__ == '__main__':
 
 
 
-    # # Test data
-    # k1, key = jax.random.split(key,2)
-    # u = []
-    # for i in range(dataset_params['K']):
-    #     u_,_ = utils.stimulation_protocol(
-    #         k1,time_st=0,time_en=dataset_params['T'],
-    #         dt=dataset_params['dt'],N=dataset_params['D'],
-    #         stimulated=jnp.arange(dataset_params['D']),
-    #         amplitude=1*jnp.ones(dataset_params['D']),
-    #         stim_d=stim_params['stim_d'],
-    #         repetition=stim_params['repetition'],
-    #         sigma=stim_params['stim_sigma']
-    #     )
-    #     u.append(u_)
-
-    # u = jnp.array(u)
-
-    # t,x_ = dataloader.run(
-    #     dataset_params['T'],dt=dataset_params['dt'],u=u,
-    #     x0=.01*jax.random.normal(
-    #         k1,shape=(dataset_params['K'],dataset_params['D'])
-    #     )
-    # )
-    # y_ = dataloader.obs(x_)
-    
-    # y = y_.transpose(1,0,2)
-    # x = x_.transpose(1,0,2)
-
-    
+    # TODO(amin): Test data?
     x_smooth = vmap(
         lambda y,u: recognition(recognition.params,k1,y,u)[0],
         in_axes=(0,0),out_axes=0
@@ -238,7 +210,6 @@ if __name__ == '__main__':
     )(mean)
 
 
-
     stim_frac = lambda u: jnp.count_nonzero(u)/len(u)
     stats = {
         'stim_d': stim_frac(u.flatten()),
@@ -253,4 +224,3 @@ if __name__ == '__main__':
     
 
     jnp.save(file+'stats',stats)
-# %%

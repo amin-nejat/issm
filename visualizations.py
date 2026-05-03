@@ -206,11 +206,11 @@ def plot_states(
     plt.tight_layout()
     plt.grid(False)
     if label is not None:
-        plt.legend(fontsize=fontsize)
+        plt.legend(fontsize=fontsize, bbox_to_anchor=(1.05, 0.5), loc='center left')
     
     if save:
-        plt.savefig(file+'.png',format='png')
-        plt.savefig(file+'.pdf',format='pdf')
+        plt.savefig(file+'.png',format='png', bbox_inches='tight')
+        plt.savefig(file+'.pdf',format='pdf', bbox_inches='tight')
         plt.close('all')
     else:
         plt.show()
@@ -339,7 +339,7 @@ def plot_performance(
         )
         
 
-    plt.legend(fontsize=fontsize)
+    plt.legend(fontsize=fontsize, bbox_to_anchor=(1.05, 0.5), loc='center left')
     plt.xticks(fontsize=fontsize)
     plt.xlabel(xlabel,fontsize=fontsize)
     plt.yticks(fontsize=fontsize)
@@ -354,8 +354,8 @@ def plot_performance(
     plt.grid(False)
 
     if save:
-        plt.savefig(file+key+'.png',format='png')
-        plt.savefig(file+key+'.pdf',format='pdf')
+        plt.savefig(file+key+'.png',format='png', bbox_inches='tight')
+        plt.savefig(file+key+'.pdf',format='pdf', bbox_inches='tight')
         plt.close('all')
     else:
         plt.show()

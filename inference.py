@@ -128,12 +128,71 @@ class AmortizedLSTM(VariationalLSTM):
             B=jnp.zeros((D,M))
         )
 
+# %%
+class TransformerEncoder(nn.Module):
+    num_layers: int
+    num_heads: int
+    qkv_features: int
+    mlp_dim: int
+
+    @nn.compact
+    def __call__(self, x):
+        # Convolutional Positional Embedding (Depthwise 1D Conv)
+        pos_emb = nn.Conv(
+            features=x.shape[-1],
+            kernel_size=(3,),
+            feature_group_count=x.shape[-1],
+            padding='SAME'
+        )(x)
+        x = x + nn.gelu(pos_emb)
+        for _ in range(self.num_layers):
+            y = nn.LayerNorm()(x)
+            y = nn.SelfAttention(num_heads=self.num_heads, qkv_features=self.qkv_features)(y)
+            x = x + y
+            y = nn.LayerNorm()(x)
+            y = nn.Dense(self.mlp_dim)(y)
+            y = nn.gelu(y)
+            y = nn.Dense(x.shape[-1])(y)
+            x = x + y
+        return x
+
+class AmortizedTransformer(VariationalLSTM):
+    """Differentiable representation of Transformer for inference"""
+    
+    def __init__(self, D: int, N: int, M: int, key: jxr.PRNGKey, interventional: bool, H: int = 64, num_heads: int = 4, num_layers: int = 2, T: int = 10):
+        super(AmortizedTransformer, self).__init__(shape=(1,T,D), interventional=interventional)
+        
+        self.f_mu = [
+            nn.Dense(H),
+            TransformerEncoder(num_layers=num_layers, num_heads=num_heads, qkv_features=H//num_heads, mlp_dim=H*2),
+            nn.Dense(D)
+        ]
+
+        self.f_scale = [
+            nn.Dense(H),
+            TransformerEncoder(num_layers=num_layers, num_heads=num_heads, qkv_features=H//num_heads, mlp_dim=H*2),
+            nn.Dense(D),
+            lambda x: nn.softplus(x)
+        ]
+
+        k1, key = jxr.split(key, 2)
+        theta_mu = self.init(k1, self.f_mu, [(1, T, M+N), (1, T, H), (1, T, H)])
+
+        k1, key = jxr.split(key, 2)
+        theta_scale = self.init(k1, self.f_scale, [(1, T, M+N), (1, T, H), (1, T, H)])
+
+        self.params = ParamsVariationalLSTM(
+            theta_mu=theta_mu,
+            theta_scale=theta_scale,
+            B=jnp.zeros((D, M))
+        )
+
 
 # %%
 def infer(
         key: jxr.PRNGKey,
         joint: fLDS,
-        recognition: AmortizedLSTM,
+        recognition: VariationalLSTM,
         y: Float[Array, "num_batches num_timesteps emission_dim"],
         u: Float[Array, "num_batches num_timesteps stim_dim"],
         n_iter: int = 100,
@@ -228,7 +287,7 @@ def infer(
 def solve_lds(
         key: jxr.PRNGKey,
         joint: fLDS,
-        recognition: AmortizedLSTM,
+        recognition: VariationalLSTM,
         y: Float[Array, "num_batches num_timesteps emission_dim"],
         u: Float[Array, "num_batches num_timesteps stim_dim"],
         n_iter: int = 100,
